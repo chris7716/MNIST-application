@@ -1,90 +1,127 @@
+import os
+import psycopg2
+from psycopg2.extras import Json
 from flask import Flask, request, jsonify
 import torch
-import torch.nn as nn
-from torchvision import datasets, transforms
+from torch import nn
 from torch.utils.data import DataLoader
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
-import numpy as np
-import io
+from torchvision import datasets, transforms
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
+# Flask App Initialization
 app = Flask(__name__)
 
-# Define the model structure (same as before)
+# Database Connection
+DB_HOST = "localhost"
+DB_NAME = "postgres"
+DB_USER = "postgres"
+DB_PASSWORD = "test123"
+DB_PORT = 5432
+
+def get_db_connection():
+    return psycopg2.connect(
+        host=DB_HOST,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        port=DB_PORT
+    )
+
+# Model Definition
 class SimpleNN(nn.Module):
     def __init__(self):
         super(SimpleNN, self).__init__()
-        self.fc1 = nn.Linear(28*28, 128)
+        self.fc1 = nn.Linear(28 * 28, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, 10)
 
     def forward(self, x):
-        x = x.view(-1, 28*28)
+        x = x.view(-1, 28 * 28)
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
+# Load MNIST Test Dataset
+transform = transforms.Compose([transforms.ToTensor()])
+test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
-# Define the transformations
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))
-])
-
-# Helper function to evaluate the model and calculate metrics
+# Evaluate Model
 def evaluate_model(model, test_loader):
-    model.eval()  # Set the model to evaluation mode
-    all_labels = []
-    all_predictions = []
+    model.eval()
+    predictions, true_labels = [], []
 
-    with torch.no_grad():  # No need to compute gradients during evaluation
+    with torch.no_grad():
         for images, labels in test_loader:
             outputs = model(images)
-            _, predicted = torch.max(outputs, 1)
+            _, preds = torch.max(outputs, 1)
+            predictions.extend(preds.numpy())
+            true_labels.extend(labels.numpy())
 
-            all_labels.extend(labels.cpu().numpy())
-            all_predictions.extend(predicted.cpu().numpy())
-
-    # Calculate accuracy
-    accuracy = 100 * np.sum(np.array(all_labels) == np.array(all_predictions)) / len(all_labels)
+    # Calculate Metrics
+    accuracy = accuracy_score(true_labels, predictions)
+    precision = precision_score(true_labels, predictions, average='weighted')
+    recall = recall_score(true_labels, predictions, average='weighted')
+    f1 = f1_score(true_labels, predictions, average='weighted')
+    conf_matrix = confusion_matrix(true_labels, predictions)
     
-    # Calculate precision, recall, and f1-score
-    precision = precision_score(all_labels, all_predictions, average='weighted')
-    recall = recall_score(all_labels, all_predictions, average='weighted')
-    f1 = f1_score(all_labels, all_predictions, average='weighted')
-    
-    # Compute confusion matrix
-    conf_matrix = confusion_matrix(all_labels, all_predictions)
+    # Convert NumPy types to native Python types
+    accuracy = float(accuracy)
+    precision = float(precision)
+    recall = float(recall)
+    f1 = float(f1)
 
     return accuracy, precision, recall, f1, conf_matrix
 
+# Flask Route
 @app.route('/test_model', methods=['POST'])
 def test_model():
-    # Check if the model is provided in the request
     if 'model' not in request.files:
-        return jsonify({'error': 'Model is required'}), 400
+        return jsonify({'error': 'Model file is required'}), 400
 
+    # Load Model
     model_file = request.files['model']
-
-    # Load the model from the uploaded file
+    model_path = os.path.join('./', model_file.filename)
+    model_file.save(model_path)
     model = SimpleNN()
-    model.load_state_dict(torch.load(model_file))
-    
-    # Load MNIST test dataset
-    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
 
-    # Evaluate the model and get the metrics
+    # Evaluate Model
     accuracy, precision, recall, f1, conf_matrix = evaluate_model(model, test_loader)
-    
-    # Return the metrics as JSON response
+
+    # Convert confusion matrix to list (for database compatibility)
+    conf_matrix_list = conf_matrix.tolist()
+
+    # Store Metrics in PostgreSQL
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    conf_mat = Json(conf_matrix_list)
+    try:
+        cursor.execute(
+            """
+            INSERT INTO model_metrics (model_name, accuracy, precision, recall, f1_score, confusion_matrix)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            ('mnist_model', accuracy, precision, recall, f1, conf_mat)
+        )
+        connection.commit()
+    except Exception as e:
+        connection.rollback()
+        print(e)
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+    finally:
+        cursor.close()
+        connection.close()
+
+    # Return Metrics
     return jsonify({
         'accuracy': accuracy,
         'precision': precision,
         'recall': recall,
         'f1_score': f1,
-        'confusion_matrix': conf_matrix.tolist()  # Convert matrix to list for JSON compatibility
+        'confusion_matrix': conf_matrix_list
     })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
