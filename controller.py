@@ -74,6 +74,32 @@ def evaluate_model(model, test_loader):
 
     return accuracy, precision, recall, f1, conf_matrix
 
+# Evaluate Model with Selected Metrics
+def evaluate_selected_metrics(model, data_loader, metrics_to_test):
+    predictions, true_labels = [], []
+
+    with torch.no_grad():
+        for images, labels in data_loader:
+            outputs = model(images)
+            _, preds = torch.max(outputs, 1)
+            predictions.extend(preds.numpy())
+            true_labels.extend(labels.numpy())
+
+    results = {}
+    if "accuracy" in metrics_to_test:
+        results["accuracy"] = float(accuracy_score(true_labels, predictions))
+    if "precision" in metrics_to_test:
+        results["precision"] = float(precision_score(true_labels, predictions, average='weighted'))
+    if "recall" in metrics_to_test:
+        results["recall"] = float(recall_score(true_labels, predictions, average='weighted'))
+    if "f1_score" in metrics_to_test:
+        results["f1_score"] = float(f1_score(true_labels, predictions, average='weighted'))
+    if "confusion_matrix" in metrics_to_test:
+        results["confusion_matrix"] = confusion_matrix(true_labels, predictions).tolist()
+
+    return results
+
+
 # Flask Route
 @app.route('/test_model', methods=['POST'])
 def test_model():
@@ -122,6 +148,120 @@ def test_model():
         'f1_score': f1,
         'confusion_matrix': conf_matrix_list
     })
+
+# Fetch Metrics with Pagination
+@app.route('/metrics', methods=['GET'])
+def get_metrics():
+    page = request.args.get('page', default=None, type=int)
+    page_size = request.args.get('page_size', default=10, type=int)  # Default page size is 10
+
+    connection = get_db_connection()
+    cursor = connection.cursor()
+
+    try:
+        if page:
+            # Paginated Fetch
+            offset = (page - 1) * page_size
+            cursor.execute(
+                """
+                SELECT model_name, accuracy, precision, recall, f1_score, confusion_matrix 
+                FROM model_metrics 
+                ORDER BY id DESC 
+                LIMIT %s OFFSET %s
+                """, 
+                (page_size, offset)
+            )
+        else:
+            # Fetch All
+            cursor.execute(
+                """
+                SELECT model_name, accuracy, precision, recall, f1_score, confusion_matrix 
+                FROM model_metrics 
+                ORDER BY id DESC
+                """
+            )
+
+        rows = cursor.fetchall()
+        metrics = [
+            {
+                "model_name": row[0],
+                "accuracy": row[1],
+                "precision": row[2],
+                "recall": row[3],
+                "f1_score": row[4],
+                "confusion_matrix": row[5]
+            }
+            for row in rows
+        ]
+
+        if not metrics:
+            return jsonify({'message': 'No metrics found.'}), 404
+
+        return jsonify(metrics)
+    except Exception as e:
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+    finally:
+        cursor.close()
+        connection.close()
+
+# Flask Route to Test Selected Metrics
+@app.route('/test_selected_metrics', methods=['POST'])
+def test_selected_metrics():
+    if 'model' not in request.files:
+        return jsonify({'error': 'Model file is required'}), 400
+    if 'metrics' not in request.form:
+        return jsonify({'error': 'Metrics to test must be specified in the form data'}), 400
+
+    # Extract metrics from form data
+    metrics_to_test = request.form.get('metrics').split(',')
+    valid_metrics = {"accuracy", "precision", "recall", "f1_score", "confusion_matrix"}
+    if not all(metric.strip() in valid_metrics for metric in metrics_to_test):
+        return jsonify({'error': 'Invalid metric(s) specified'}), 400
+
+    # Load the model
+    model_file = request.files['model']
+    model_path = os.path.join('./', model_file.filename)
+    model_file.save(model_path)
+    
+    # Match the architecture used in `test_model`
+    model = SimpleNN()
+    state_dict = torch.load(model_path, map_location=torch.device('cpu'))
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    # Evaluate the model
+    results = evaluate_selected_metrics(model, test_loader, metrics_to_test)
+
+    # Store selected metrics in the database
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    try:
+        # Store each metric if it exists in the results
+        cursor.execute(
+            """
+            INSERT INTO model_metrics (model_name, accuracy, precision, recall, f1_score, confusion_matrix)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                'selected_metrics_model',
+                results.get("accuracy"),
+                results.get("precision"),
+                results.get("recall"),
+                results.get("f1_score"),
+                Json(results.get("confusion_matrix")) if "confusion_matrix" in results else None
+            )
+        )
+        connection.commit()
+    except Exception as e:
+        connection.rollback()
+        print(e)
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+    finally:
+        cursor.close()
+        connection.close()
+
+    # Return the results
+    return jsonify(results)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
