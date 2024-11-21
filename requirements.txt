@@ -1,6 +1,6 @@
 Flask==2.3.2
 Flask-Cors==3.0.10
-Flask-Swagger-UI==4.12.0
+Flask-Swagger-UI==4.11.1
 psycopg2-binary==2.9.7
 torch==2.0.1
 torchvision==0.15.2
