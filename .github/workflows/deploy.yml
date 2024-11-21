@@ -43,6 +43,13 @@ jobs:
               exit 1
           fi
 
+          # Set environment variables if not already set
+          export DB_HOST=${{ secrets.DB_HOST }}
+          export DB_NAME=${{ secrets.DB_NAME }}
+          export DB_USER=${{ secrets.DB_USER }}
+          export DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          export DB_PORT=${{ secrets.DB_PORT }}
+
           # Deploy with Docker Compose
           docker-compose down || true
           docker-compose up -d --build
