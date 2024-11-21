@@ -1,4 +1,4 @@
-name: Deploy Flask App to VM
+name: Deploy Flask App to VM using Docker Compose
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
@@ -16,23 +16,18 @@ jobs:
     - name: Set up sshpass
       run: sudo apt-get install -y sshpass
 
-    - name: Build Docker image
+    - name: Transfer application files to VM
       run: |
-        docker build -t flask-app .
+        sshpass -p "${{ secrets.VM_PASSWORD }}" scp -o StrictHostKeyChecking=no \
+        -r . ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }}:/tmp/flask-app
 
-    - name: Save Docker image to a tar file
-      run: |
-        docker save flask-app > flask-app.tar
-
-    - name: Transfer Docker image to VM
-      run: |
-        sshpass -p "${{ secrets.VM_PASSWORD }}" scp -o StrictHostKeyChecking=no flask-app.tar ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }}:/tmp/
-
-    - name: SSH into VM and load Docker image
+    - name: SSH into VM and deploy with Docker Compose
       run: |
         sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }} << 'EOF'
-          # Load the Docker image
-          docker load -i /tmp/flask-app.tar
-          # Run the Docker container
-          docker run -d -p 5000:5000 flask-app
+          # Move to the app directory
+          cd /tmp/flask-app
+
+          # Pull the latest Docker images (if needed) and restart the containers
+          docker-compose down
+          docker-compose up -d --build
         EOF
