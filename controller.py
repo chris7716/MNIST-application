@@ -1,15 +1,18 @@
 import os
 import psycopg2
+import torch 
 from psycopg2.extras import Json
-from flask import Flask, request, jsonify
-import torch
+from flask import Flask, request, jsonify, send_from_directory
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from flask_swagger_ui import get_swaggerui_blueprint
+from flask_cors import CORS
 
 # Flask App Initialization
 app = Flask(__name__)
+CORS(app)
 
 # Database Connection
 DB_HOST = "localhost"
@@ -17,6 +20,23 @@ DB_NAME = "postgres"
 DB_USER = "postgres"
 DB_PASSWORD = "test123"
 DB_PORT = 5432
+
+# Swagger UI configuration
+SWAGGER_URL = '/swagger'  # Swagger UI endpoint
+API_URL = '/static/swagger.yaml'  # Location of the YAML file
+
+swaggerui_blueprint = get_swaggerui_blueprint(
+    SWAGGER_URL,
+    API_URL,
+    config={'app_name': "Model Testing and Metrics API"}
+)
+
+app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
+
+# Route to serve static files
+@app.route('/static/<path:path>')
+def serve_static_files(path):
+    return send_from_directory('static', path)
 
 def get_db_connection():
     return psycopg2.connect(
