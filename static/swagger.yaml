@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info:
+  title: Model Testing and Metrics API
+  description: API for uploading models, testing them on the MNIST dataset, and storing/retrieving metrics.
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000
+    description: Local server
+paths:
+  /test_model:
+    post:
+      summary: Test a model and store metrics
+      description: Upload a trained model, test it on the MNIST dataset, and store evaluation metrics in the database.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  format: binary
+                  description: The trained PyTorch model file.
+      responses:
+        200:
+          description: Metrics calculated and stored successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accuracy:
+                    type: number
+                  precision:
+                    type: number
+                  recall:
+                    type: number
+                  f1_score:
+                    type: number
+                  confusion_matrix:
+                    type: array
+                    items:
+                      type: array
+                      items:
+                        type: integer
+        400:
+          description: Bad request (e.g., missing model file).
+        500:
+          description: Internal server error (e.g., database issues).
+  /metrics:
+    get:
+      summary: Fetch metrics with pagination
+      description: Retrieve stored metrics with optional pagination.
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+          description: Page number (optional).
+        - in: query
+          name: page_size
+          schema:
+            type: integer
+            default: 10
+          description: Number of results per page.
+      responses:
+        200:
+          description: List of metrics.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    model_name:
+                      type: string
+                    accuracy:
+                      type: number
+                    precision:
+                      type: number
+                    recall:
+                      type: number
+                    f1_score:
+                      type: number
+                    confusion_matrix:
+                      type: array
+                      items:
+                        type: array
+                        items:
+                          type: integer
+        404:
+          description: No metrics found.
+        500:
+          description: Internal server error.
+  /test_selected_metrics:
+    post:
+      summary: Test a model with selected metrics
+      description: Upload a model and specify metrics to calculate.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  format: binary
+                  description: The trained PyTorch model file.
+                metrics:
+                  type: string
+                  description: Comma-separated list of metrics to evaluate. Options - accuracy, precision, recall, f1_score, confusion_matrix.
+      responses:
+        200:
+          description: Selected metrics calculated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: number
+        400:
+          description: Bad request (e.g., missing model file or invalid metrics).
+        500:
+          description: Internal server error.
