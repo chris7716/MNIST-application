@@ -15,7 +15,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Database Connection
-DB_HOST = "localhost"
+DB_HOST = "postgres"
 DB_NAME = "postgres"
 DB_USER = "postgres"
 DB_PASSWORD = "test123"
