@@ -1,6 +1,7 @@
 import os
 import psycopg2
-import torch 
+import torch
+from dotenv import load_dotenv
 from psycopg2.extras import Json
 from flask import Flask, request, jsonify, send_from_directory
 from torch import nn
@@ -10,16 +11,18 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
 
+load_dotenv()
+
 # Flask App Initialization
 app = Flask(__name__)
 CORS(app)
 
 # Database Connection
-DB_HOST = "postgres"
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASSWORD = "test123"
-DB_PORT = 5432
+DB_HOST = os.getenv("DB_HOST", "xxxxx")
+DB_NAME = os.getenv("DB_NAME", "xxxxx")
+DB_USER = os.getenv("DB_USER", "xxxxx")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "xxxxx")
+DB_PORT = int(os.getenv("DB_PORT", 1111))
 
 # Swagger UI configuration
 SWAGGER_URL = '/swagger'  # Swagger UI endpoint
