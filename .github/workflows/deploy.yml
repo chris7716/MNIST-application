@@ -16,18 +16,25 @@ jobs:
     - name: Set up sshpass
       run: sudo apt-get install -y sshpass
 
-    - name: Transfer application files to VM
+    - name: Compress application files
+      run: zip -r flask-app.zip .
+
+    - name: Transfer zipped application to VM
       run: |
         sshpass -p "${{ secrets.VM_PASSWORD }}" scp -o StrictHostKeyChecking=no \
-        -r . ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }}:/tmp/flask-app
+        flask-app.zip ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }}:/tmp/
 
     - name: SSH into VM and deploy with Docker Compose
       run: |
         sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }} << 'EOF'
-          # Move to the app directory
-          cd /tmp/flask-app
+          # Move to the /tmp directory
+          cd /tmp
 
-          # Pull the latest Docker images (if needed) and restart the containers
+          # Unzip the transferred application
+          unzip -o flask-app.zip -d flask-app
+          cd flask-app
+
+          # Deploy with Docker Compose
           docker-compose down
           docker-compose up -d --build
         EOF
