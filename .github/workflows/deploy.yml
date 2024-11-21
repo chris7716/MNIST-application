@@ -1,0 +1,38 @@
+name: Deploy Flask App to VM
+
+on:
+  push:
+    branches:
+      - dockerize-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up sshpass
+      run: sudo apt-get install -y sshpass
+
+    - name: Build Docker image
+      run: |
+        docker build -t flask-app .
+
+    - name: Save Docker image to a tar file
+      run: |
+        docker save flask-app > flask-app.tar
+
+    - name: Transfer Docker image to VM
+      run: |
+        sshpass -p "${{ secrets.VM_PASSWORD }}" scp -o StrictHostKeyChecking=no flask-app.tar ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }}:/tmp/
+
+    - name: SSH into VM and load Docker image
+      run: |
+        sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }} << 'EOF'
+          # Load the Docker image
+          docker load -i /tmp/flask-app.tar
+          # Run the Docker container
+          docker run -d -p 5000:5000 flask-app
+        EOF
