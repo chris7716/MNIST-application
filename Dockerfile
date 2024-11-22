@@ -15,7 +15,7 @@ RUN pip install -r requirements.txt
 EXPOSE 5000
 
 # Define environment variable
-ENV FLASK_APP=controller.py
+ENV FLASK_APP=app.py
 
 # Run app.py when the container launches
-CMD ["python", "controller.py"]
+CMD ["python", "app.py"]
