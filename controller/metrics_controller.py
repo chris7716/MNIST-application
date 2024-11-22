@@ -1,14 +1,13 @@
 from psycopg2.extras import Json
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Blueprint
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from flask_swagger_ui import get_swaggerui_blueprint
-from flask_cors import CORS
 
 from service.metrics_service import evaluate_partial_metrics, fetch_metrics_from_db, evaluate_complete_metrics
 
-# Flask App Initialization
-app = Flask(__name__)
-CORS(app)
+# Create a blueprint for the controller
+metrics_controller = Blueprint('metrics_controller', __name__)
+
 # Swagger UI configuration
 SWAGGER_URL = '/swagger'  # Swagger UI endpoint
 API_URL = '/static/swagger.yaml'  # Location of the YAML file
@@ -19,15 +18,15 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     config={'app_name': "Model Testing and Metrics API"}
 )
 
-app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
+metrics_controller.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
 # Route to serve static files
-@app.route('/static/<path:path>')
+@metrics_controller.route('/static/<path:path>')
 def serve_static_files(path):
     return send_from_directory('static', path)
 
 # Flask Route
-@app.route('/test_model', methods=['POST'])
+@metrics_controller.route('/test_model', methods=['POST'])
 def test_model():
     if 'model' not in request.files:
         return jsonify({'error': 'Model file is required'}), 400
@@ -38,7 +37,7 @@ def test_model():
     return evaluate_complete_metrics(model_file)
 
 # Fetch Metrics with Pagination
-@app.route('/metrics', methods=['GET'])
+@metrics_controller.route('/metrics', methods=['GET'])
 def get_metrics():
     page = request.args.get('page', default=None, type=int)
     page_size = request.args.get('page_size', default=10, type=int)  # Default page size is 10
@@ -46,7 +45,7 @@ def get_metrics():
     return fetch_metrics_from_db(page, page_size)
 
 # Flask Route to Test Selected Metrics
-@app.route('/test_selected_metrics', methods=['POST'])
+@metrics_controller.route('/test_selected_metrics', methods=['POST'])
 def test_selected_metrics():
     if 'model' not in request.files:
         return jsonify({'error': 'Model file is required'}), 400
@@ -64,6 +63,3 @@ def test_selected_metrics():
 
     # Return the results
     return jsonify(evaluate_partial_metrics(model_file))
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
