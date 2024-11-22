@@ -4,7 +4,7 @@ info:
   description: API for uploading models, testing them on the MNIST dataset, and storing/retrieving metrics.
   version: 1.0.0
 servers:
-  - url: http://localhost:5000
+  - url: http://185.182.185.45:5000
     description: Local server
 paths:
   /test_model:
