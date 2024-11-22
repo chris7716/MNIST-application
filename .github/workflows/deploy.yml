@@ -1,0 +1,62 @@
+name: Deploy Flask App to VM using Docker Compose
+
+on:
+  push:
+    branches:
+      - dockerize-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up sshpass
+      run: sudo apt-get install -y sshpass
+
+    - name: Compress application files
+      run: zip -r flask-app.zip .
+
+    - name: Transfer zipped application to VM
+      run: |
+        sshpass -p "${{ secrets.VM_PASSWORD }}" scp -o StrictHostKeyChecking=no \
+        flask-app.zip ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }}:/tmp/
+
+    - name: SSH into VM and deploy with Docker Compose
+      run: |
+        sshpass -p "${{ secrets.VM_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_PUBLIC_IP }} << 'EOF'
+          # Install unzip if not already installed
+          sudo apt-get update -y
+          sudo apt-get install -y unzip
+
+          # Move to the /tmp directory and unzip the application
+          cd /tmp
+          rm -rf flask-app  # Clean up if an old version exists
+          unzip -o flask-app.zip -d flask-app
+          cd flask-app
+
+          # Check if docker-compose.yml exists
+          if [ ! -f docker-compose.yml ]; then
+              echo "Error: docker-compose.yml not found!"
+              exit 1
+          fi
+
+          # Set environment variables if not already set
+          export DB_HOST=${{ secrets.DB_HOST }}
+          export DB_NAME=${{ secrets.DB_NAME }}
+          export DB_USER=${{ secrets.DB_USER }}
+          export DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          export DB_PORT=${{ secrets.DB_PORT }}
+
+          # Deploy with Docker Compose
+          docker-compose down || true
+          docker-compose up -d --build
+        EOF
+      env:
+        DB_HOST: ${{ secrets.DB_HOST }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        DB_PORT: ${{ secrets.DB_PORT }}
